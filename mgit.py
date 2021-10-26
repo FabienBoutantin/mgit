@@ -23,8 +23,11 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-def get_cli_arguments(arguments):
-    parser = argparse.ArgumentParser()
+def get_cli_arguments(arguments, print_usage=False):
+    parser = argparse.ArgumentParser(
+        usage='%(prog)s [options] [DIR [DIR]] -- GIT_ARGUMENTS',
+        epilog="If no option needed, simply use: %(prog)s GIT_ARGUMENTS"
+    )
     parser.add_argument(
         "-v", "--verbose",
         action="store_true", dest="verbose", help="make lots of noise"
@@ -35,7 +38,10 @@ def get_cli_arguments(arguments):
     arguments = parser.parse_args(arguments)
     if len(arguments.directories) == 0:
         arguments.directories = [".", ]
-    print(arguments)
+    if print_usage:
+        parser.print_usage()
+        print("For more help, use the -h/--help argument.")
+        exit(1)
     return arguments
 
 
@@ -45,20 +51,20 @@ def get_split_arguments():
         script_args = sys.argv[:sys.argv.index("--")]
         git_cmd += sys.argv[sys.argv.index("--") + 1:]
     else:
-        script_args = ["."]
-        git_cmd += sys.argv[1:]
+        if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
+            script_args = sys.argv[1:]
+            git_cmd += []
+        else:
+            script_args = ["."]
+            git_cmd += sys.argv[1:]
     return script_args, git_cmd
 
 
 def main():
     returned_codes = defaultdict(list)
     script_args, git_cmd = get_split_arguments()
-    if len(git_cmd) == 1:
-        print(f"Usage: {sys.argv[0]} SCRIPT_OPTIONS -- GIT_OPTIONS_TO_USE_ON_EACH_SUBDIRECTORY")
-        print(f"   or: {sys.argv[0]} GIT_OPTIONS_TO_USE_ON_EACH_SUBDIRECTORY")
-        return 1
 
-    options = get_cli_arguments(script_args)
+    options = get_cli_arguments(script_args, len(git_cmd) <= 1)
     dirs_to_handle = list()
     for root_dir in options.directories:
         root_dir = pathlib.Path(root_dir)
@@ -74,7 +80,7 @@ def main():
     print(f"Run this command on {len(dirs_to_handle)} directories: {' '.join(git_cmd)}")
     for d in dirs_to_handle:
         print("=" * shutil.get_terminal_size((80, 20)).columns)
-        print(f"handling {d}")
+        print(f"handling {d}", flush=True)
         with working_directory(d):
             r = subprocess.run(git_cmd)
             print(f"Command finished with return code: {r.returncode}")
