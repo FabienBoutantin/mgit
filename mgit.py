@@ -28,12 +28,20 @@ def get_cli_arguments(arguments, print_usage=False):
         usage='%(prog)s [options] [DIR [DIR]] -- GIT_ARGUMENTS',
         epilog="If no option needed, simply use: %(prog)s GIT_ARGUMENTS"
     )
-    parser.add_argument(
+    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group.add_argument(
         "-v", "--verbose",
         action="store_true", dest="verbose", help="make lots of noise"
     )
+    verbosity_group.add_argument(
+        "-q", "--quiet",
+        action="store_true", dest="quiet",
+        help="display output of failing commands only"
+    )
     parser.add_argument(
-        "directories", metavar="DIR", nargs="+", help="Directory to analyze."
+        "directories",
+        metavar="DIR", nargs="+",
+        help="Directory to analyze."
     )
     arguments = parser.parse_args(arguments)
     if len(arguments.directories) == 0:
@@ -77,18 +85,43 @@ def main():
                 continue
             dirs_to_handle.append(d)
 
-    print(f"Run this command on {len(dirs_to_handle)} directories: {' '.join(git_cmd)}")
+    if options.verbose:
+        print(f"Run this command on {len(dirs_to_handle)} directories: {' '.join(git_cmd)}")
     for d in dirs_to_handle:
-        print("=" * shutil.get_terminal_size((80, 20)).columns)
-        print(f"handling {d}", flush=True)
+        msg = f"handling {d}"
+        if options.quiet:
+            print("* ", end="")
+        elif options.verbose:
+            print("~" * shutil.get_terminal_size((80, 20)).columns)
+        else:
+            print("~" * len(msg))
+        print(msg, flush=True)
         with working_directory(d):
-            r = subprocess.run(git_cmd)
-            print(f"Command finished with return code: {r.returncode}")
-            returned_codes[r.returncode].append(d)
-    print("#" * shutil.get_terminal_size((80, 20)).columns)
-    print("Summary per return code:")
-    for x in sorted(returned_codes):
-        print(f" * {x}: {len(returned_codes[x])} repos")
+            if options.quiet:
+                try:
+                    subprocess.check_output(git_cmd, stderr=subprocess.STDOUT)
+                    r = 0
+                except subprocess.CalledProcessError as e:
+                    r = e.returncode
+                    print(e.output.decode("utf-8"), end="")
+            else:
+                r = subprocess.run(git_cmd).returncode
+            if options.verbose or (r != 0):
+                print(f">>> return code: {r}")
+            returned_codes[r].append(d)
+    if not options.quiet:
+        msg = "Summary per return code:"
+        print()
+        if options.verbose:
+            print("=" * shutil.get_terminal_size((80, 20)).columns)
+        else:
+            print("=" * len(msg))
+        print(msg)
+        for x in sorted(returned_codes):
+            if options.verbose:
+                print(f" * {x}: {', '.join(map(str, returned_codes[x]))}")
+            else:
+                print(f" * {x}: {len(returned_codes[x])} repo(s)")
     return 0
 
 
