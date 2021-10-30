@@ -8,6 +8,7 @@ Handle multiple git repositories at the same time with a single command.
 Clone the repository on your computer and initialize Git submodules by running the following command:
 ```bash
 git submodule init
+git submodule update
 ```
 
 Finally, simply put the cloned directory in your PATH.
