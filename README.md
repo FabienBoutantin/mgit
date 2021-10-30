@@ -5,7 +5,12 @@ Handle multiple git repositories at the same time with a single command.
 
 ## Installation
 
-Simply put the cloned directory of this repository in your PATH.
+Clone the repository on your computer and initialize Git submodules by running the following command:
+```bash
+git submodule init
+```
+
+Finally, simply put the cloned directory in your PATH.
 You will need python 3.6 or newer installed too.
 
 

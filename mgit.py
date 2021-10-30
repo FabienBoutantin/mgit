@@ -11,6 +11,8 @@ import contextlib
 from collections import defaultdict
 import argparse
 
+import PythonColorConsole.color_console as color_console
+
 
 @contextlib.contextmanager
 def working_directory(path):
@@ -73,6 +75,7 @@ def get_split_arguments():
 
 
 def main():
+    cc = color_console.ColorConsole()
     returned_codes = defaultdict(list)
     script_args, git_cmd = get_split_arguments()
 
@@ -90,16 +93,22 @@ def main():
             dirs_to_handle.append(d)
 
     if options.verbose:
+        cc.yellow()
         print(f"Run this command on {len(dirs_to_handle)} directories: {' '.join(git_cmd)}")
+        cc.reset()
     for d in dirs_to_handle:
         msg = f"handling {d}"
+        cc.cyan()
         if options.quiet:
             print("* ", end="")
         elif options.verbose:
             print("~" * shutil.get_terminal_size((80, 20)).columns)
         else:
             print("~" * len(msg))
+        cc.bold()
+        cc.blue()
         print(msg, flush=True)
+        cc.reset()
         with working_directory(d):
             if options.quiet:
                 try:
@@ -111,9 +120,16 @@ def main():
             else:
                 r = subprocess.run(git_cmd).returncode
             if options.verbose or (r != 0):
+                if r == 0:
+                    cc.green()
+                else:
+                    cc.bold()
+                    cc.red()
                 print(f">>> return code: {r}")
+                cc.reset()
             returned_codes[r].append(d)
     if not options.quiet:
+        cc.bold()
         msg = "Summary per return code:"
         print()
         if options.verbose:
@@ -121,11 +137,17 @@ def main():
         else:
             print("=" * len(msg))
         print(msg)
+        cc.reset()
         for x in sorted(returned_codes):
+            if x == 0:
+                cc.green()
+            else:
+                cc.red()
             if options.verbose:
                 print(f" * {x}: {', '.join(map(str, returned_codes[x]))}")
             else:
                 print(f" * {x}: {len(returned_codes[x])} repo(s)")
+        cc.reset()
     return 0
 
 

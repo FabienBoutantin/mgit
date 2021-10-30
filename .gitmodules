@@ -1,0 +1,3 @@
+[submodule "PythonColorConsole"]
+	path = PythonColorConsole
+	url = https://github.com/FabienBoutantin/PythonColorConsole.git
