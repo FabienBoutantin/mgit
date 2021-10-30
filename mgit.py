@@ -23,7 +23,7 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-def get_cli_arguments(arguments, print_usage=False):
+def get_cli_arguments(command_arguments, print_usage=False):
     parser = argparse.ArgumentParser(
         usage='%(prog)s [options] [DIR [DIR]] -- GIT_ARGUMENTS',
         epilog="If no option needed, simply use: %(prog)s GIT_ARGUMENTS"
@@ -43,7 +43,11 @@ def get_cli_arguments(arguments, print_usage=False):
         metavar="DIR", nargs="+",
         help="Directory to analyze."
     )
-    arguments = parser.parse_args(arguments)
+    try:
+        arguments = parser.parse_intermixed_args(command_arguments)
+    except AttributeError:
+        arguments = parser.parse_args(command_arguments)
+
     if len(arguments.directories) == 0:
         arguments.directories = [".", ]
     if print_usage:
@@ -56,7 +60,7 @@ def get_cli_arguments(arguments, print_usage=False):
 def get_split_arguments():
     git_cmd = ["git", ]
     if "--" in sys.argv:
-        script_args = sys.argv[:sys.argv.index("--")]
+        script_args = sys.argv[1:sys.argv.index("--")]
         git_cmd += sys.argv[sys.argv.index("--") + 1:]
     else:
         if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
