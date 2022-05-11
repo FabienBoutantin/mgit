@@ -10,8 +10,12 @@ import shutil
 import contextlib
 from collections import defaultdict
 from argparse import ArgumentParser
+from textwrap import dedent
 
 import PythonColorConsole.color_console as color_console
+
+
+LIST_REPOS_WITH_MOD = ("-l", "--list-repos-with-modifications")
 
 
 @contextlib.contextmanager
@@ -28,14 +32,24 @@ def working_directory(path):
 def _get_cli_parser():
     """Returns an argument Parser ready to parse command line"""
     parser = ArgumentParser(
-        usage='%(prog)s [options] [DIR [DIR]] -- GIT_ARGUMENTS',
+        description="Executes the same git command on multiple repositories",
+        usage=dedent(f"""
+        %(prog)s [options] [DIR [DIR]] -- GIT_ARGUMENTS
+               %(prog)s GIT_ARGUMENTS
+               %(prog)s {"|".join(LIST_REPOS_WITH_MOD)} [DIR [DIR]]
+            """).strip(),
         epilog="If no option needed, simply use: %(prog)s GIT_ARGUMENTS"
+    )
+    parser.add_argument(
+        *LIST_REPOS_WITH_MOD,
+        action="store_true", dest="list_repos_with_mods",
+        help="Change mode to list repositories with local modifications"
     )
     filtering_group = parser.add_argument_group("Filtering")
     filtering_group.add_argument(
         "-f", "--filtering-file",
         action="append", dest="filtering_files",
-        help="Filtering File(s)"
+        help="Add a Filtering File"
     )
     filtering_group.add_argument(
         "-F", "--no-filtering",
@@ -47,15 +61,17 @@ def _get_cli_parser():
         action="store_true", dest="invert_filtering",
         help="Invert Filtering behavior"
     )
-    verbosity_group = parser.add_mutually_exclusive_group()
+    verbosity_group = parser.add_argument_group("Verbosity")
+    verbosity_group = verbosity_group.add_mutually_exclusive_group()
     verbosity_group.add_argument(
         "-v", "--verbose",
-        action="store_true", dest="verbose", help="make lots of noise"
+        action="store_true", dest="verbose",
+        help="Makes lots of noise"
     )
     verbosity_group.add_argument(
         "-q", "--quiet",
         action="store_true", dest="quiet",
-        help="display output of failing commands only"
+        help="Display output of failing commands only"
     )
     parser.add_argument(
         "directories",
@@ -101,7 +117,7 @@ def get_cli_arguments(command_arguments: list, print_usage=False):
     except AttributeError:
         arguments = parser.parse_args(command_arguments)
 
-    if print_usage:
+    if print_usage and not arguments.list_repos_with_mods:
         parser.print_usage()
         print("For more help, use the -h/--help argument.")
         exit(1)
@@ -122,6 +138,13 @@ def get_split_arguments():
         if "-h" in sys.argv[1:] or "--help" in sys.argv[1:]:
             script_args = sys.argv[1:]
             git_cmd += []
+        elif (
+            LIST_REPOS_WITH_MOD[0] in sys.argv[1:]
+            or
+            LIST_REPOS_WITH_MOD[1] in sys.argv[1:]
+        ):
+            script_args = sys.argv[1:]
+            git_cmd += ["status", "--porcelain"]
         else:
             script_args = ["."]
             git_cmd += sys.argv[1:]
@@ -135,37 +158,48 @@ def handle_directory(
     git_cmd: list
 ):
     """Runs the given git_cmd on the given directory"""
-    msg = f"handling {directory}"
-    cc.cyan()
-    if options.quiet:
-        print("* ", end="")
-    elif options.verbose:
-        print("~" * shutil.get_terminal_size((80, 20)).columns)
-    else:
-        print("~" * len(msg))
-    cc.bold()
-    cc.blue()
-    print(msg, flush=True)
-    cc.reset()
-    with working_directory(directory):
+    if not options.list_repos_with_mods:
+        msg = f"handling {directory}"
+        cc.cyan()
         if options.quiet:
-            try:
-                subprocess.check_output(git_cmd, stderr=subprocess.STDOUT)
-                r = 0
-            except subprocess.CalledProcessError as e:
-                r = e.returncode
-                print(e.output.decode("utf-8"), end="")
+            print("* ", end="")
+        elif options.verbose:
+            print("~" * shutil.get_terminal_size((80, 20)).columns)
         else:
-            r = subprocess.run(git_cmd).returncode
-        if options.verbose or (r != 0):
-            if r == 0:
-                cc.green()
+            print("~" * len(msg))
+        cc.bold()
+        cc.blue()
+        print(msg, flush=True)
+        cc.reset()
+    ret_code = 0
+    with working_directory(directory):
+        if options.list_repos_with_mods:
+            try:
+                output = subprocess.check_output(
+                    git_cmd, stderr=subprocess.STDOUT
+                )
+                if output:
+                    print(directory)
+            except subprocess.CalledProcessError:
+                pass
+        else:
+            if options.quiet:
+                try:
+                    subprocess.check_output(git_cmd, stderr=subprocess.STDOUT)
+                except subprocess.CalledProcessError as e:
+                    ret_code = e.returncode
+                    print(e.output.decode("utf-8"), end="")
             else:
-                cc.bold()
-                cc.red()
-            print(f">>> return code: {r}")
-            cc.reset()
-    return r
+                ret_code = subprocess.run(git_cmd).returncode
+            if options.verbose or (ret_code != 0):
+                if ret_code == 0:
+                    cc.green()
+                else:
+                    cc.bold()
+                    cc.red()
+                print(f">>> return code: {ret_code}")
+                cc.reset()
+    return ret_code
 
 
 def read_filtering_files(list_of_files: list):
@@ -197,13 +231,19 @@ def compute_list_of_dirs_to_handle(options, cc: color_console):
         # Compute filtering stuff
         filtering_elements = read_filtering_files(options.filtering_files)
         default_filtering_file = root_dir / ".mgit_filter"
-        if not options.filtering_files and default_filtering_file.is_file():
-            if not cc.acknowledgment(
-                f"default filtering file found in '{root_dir}', continue?"
-            ):
-                exit(1)
-            filtering_elements = read_filtering_files(
-                [default_filtering_file]
+        if (
+            not options.filtering_files
+            and
+            default_filtering_file.is_file()
+            and
+            cc.acknowledgment(
+                f"default filtering file found in '{root_dir}', use it?"
+            )
+        ):
+            filtering_elements.update(
+                read_filtering_files(
+                    [default_filtering_file]
+                )
             )
 
         # Loop on all possible sub items:
@@ -217,6 +257,8 @@ def compute_list_of_dirs_to_handle(options, cc: color_console):
 
 def print_summary(returned_codes: dict, cc: color_console, options):
     """According to options, prints the summary of the execution"""
+    if options.list_repos_with_mods:
+        return
     cc.bold()
     msg = "Summary per return code:"
     print()
@@ -232,9 +274,14 @@ def print_summary(returned_codes: dict, cc: color_console, options):
         else:
             cc.red()
         if options.verbose or x != 0:
-            print(f" * {x}: {', '.join(map(str, returned_codes[x]))}")
+            print(
+                f" * {x}: {len(returned_codes[x])}:",
+                f"{', '.join(map(str, returned_codes[x]))}"
+            )
         else:
-            print(f" * {x}: {len(returned_codes[x])} repo(s)")
+            print(
+                f" * {x}: {len(returned_codes[x])} repo(s)"
+            )
     cc.reset()
 
 
